@@ -1,0 +1,211 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                 String           @id @default(nanoid())
+  name               String
+  apiKey             String?
+  plan               String
+  clerkId            String?
+  primary_email      String           @unique
+  subscription_id    String
+  subscription_email String
+  period             String
+  applications       Application[]
+  accountuser        AccountUser[]
+  accKeys            Key[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  Dnsmonitor         Dnsmonitor[]
+  Httpmonitor        Httpmonitor[]
+  SSLcertificate     SSLcertificate[]
+  Tcpmonitor         Tcpmonitor[]
+  Jwtks              Jwks[]
+}
+
+model UserPending {
+  id       String  @id @default(nanoid())
+  email    String  @unique
+  verified Boolean @default(false)
+  password String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id        String        @id @default(nanoid())
+  email     String        @unique
+  name      String
+  apiKey    String?
+  avatar    String?
+  password  String?
+  accounts  AccountUser[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model AccountUser {
+  id        String   @id @default(nanoid())
+  account   Account  @relation(fields: [accId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  accId     String
+  email     String
+  name      String
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accId, userId])
+}
+
+model Application {
+  account     Account  @relation(fields: [accId], references: [id], onDelete: Cascade)
+  appKeys     Key[]
+  accId       String
+  id          String   @id @default(nanoid())
+  name        String
+  description String
+  expires     Int      @default(0)
+  ratelimit   String?
+  refill      String?
+  prefix      String?
+  keyType     String
+  jwk         String?
+  remaining   Int?
+  byteLength  Int      @default(32)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Key {
+  id          String      @id @default(nanoid(25))
+  appId       String
+  account     Account     @relation(fields: [accId], references: [id], onDelete: Cascade)
+  accId       String
+  value       String
+  byteLength  Int         @default(135)
+  enabled     Boolean     @default(true)
+  environment String      @default("default")
+  expires     Int         @default(0)
+  metadata    String?
+  ratelimit   String?
+  refill      String?
+  remaining   Int?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  Application Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+}
+
+model Dnsmonitor {
+  id           String   @id @default(nanoid(25))
+  account      Account  @relation(fields: [accId], references: [id], onDelete: Cascade)
+  accId        String
+  name         String
+  ips          String
+  mon_status   Boolean  @default(true)
+  hostname     String
+  checks_down  Int
+  checks_up    Int
+  dns_error    String
+  interval     Int
+  europe       Boolean  @default(false)
+  america      Boolean  @default(true)
+  asia         Boolean  @default(false)
+  middle       Boolean  @default(false)
+  isStatusPage Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Httpmonitor {
+  id             String           @id @default(nanoid(25))
+  account        Account          @relation(fields: [accId], references: [id], onDelete: Cascade)
+  accId          String
+  name           String
+  url            String
+  status_code    Int
+  mon_status     Boolean          @default(true)
+  ssl_verify     Boolean          @default(true)
+  follow_redir   Boolean          @default(true)
+  method         String
+  req_timeout    Int
+  req_headers    String
+  interval       Int
+  checks_down    Int
+  checks_up      Int
+  europe         Boolean          @default(false)
+  america        Boolean          @default(true)
+  asia           Boolean          @default(false)
+  middle         Boolean          @default(false)
+  isStatusPage   Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  SSLcertificate SSLcertificate[]
+}
+
+model Tcpmonitor {
+  id           String   @id @default(nanoid(25))
+  account      Account  @relation(fields: [accId], references: [id], onDelete: Cascade)
+  accId        String
+  name         String
+  ip_address   String
+  port         Int
+  mon_status   Boolean  @default(true)
+  interval     Int
+  checks_down  Int
+  checks_up    Int
+  europe       Boolean  @default(false)
+  america      Boolean  @default(true)
+  asia         Boolean  @default(false)
+  middle       Boolean  @default(false)
+  isStatusPage Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SSLcertificate {
+  id          String      @id @default(nanoid(25))
+  account     Account     @relation(fields: [accId], references: [id], onDelete: Cascade)
+  accId       String
+  monitor_id  Httpmonitor @relation(fields: [monId], references: [id], onDelete: Cascade)
+  monId       String
+  certificate String
+  expired_at  Int
+  checked_at  Int
+}
+
+model Feedback {
+  id          String   @id @default(nanoid(25))
+  name        String
+  description String
+  upvote      Int
+  status      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Jwks {
+  id           String   @id @default(nanoid(25))
+  account      Account  @relation(fields: [accId], references: [id], onDelete: Cascade)
+  accId        String
+  appID        String?
+  jwk          String
+  jwtEndpoint  String?
+  lastChekcked Int
+  kid          String
+  status       String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

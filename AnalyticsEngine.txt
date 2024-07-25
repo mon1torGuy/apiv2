@@ -1,0 +1,9 @@
+dataset: analytics
+=================
+blob1: AccountID
+blob2: ApplicationID
+blob3: KeyID
+blob5: AppName
+double1: User-Agent
+double2: IP address decimal
+index: KeyID
