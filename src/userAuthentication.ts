@@ -5,8 +5,14 @@ import { authMiddleware, generateAPIKey, generateToken, hashPassword, RequestKey
 import { createPrismaClient } from './prisma';
 //@ts-expect-error
 import { PrismaClientKnownRequestError } from '@prisma/client';
-
+import { uniqueNamesGenerator, Config, adjectives, colors } from 'unique-names-generator';
+const customConfig: Config = {
+	dictionaries: [adjectives, colors],
+	separator: '-',
+	length: 2,
+};
 type Bindings = {
+	account_keys: KVNamespace;
 	typeauth_keys: KVNamespace;
 	refill_timestamp: KVNamespace;
 	SENTRY_DSN: string;
@@ -18,8 +24,8 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use('*', sentry());
 app.use('*', cors());
 
-//? Create a key
-app.post('/login', authMiddleware, async (c) => {
+//? Create a user signup
+app.post('/signup', authMiddleware, async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
 
 	try {
@@ -50,19 +56,19 @@ app.post('/login', authMiddleware, async (c) => {
 		}
 
 		const hash = await hashPassword(password);
+		const token = generateToken();
 
 		const userPending = await prisma.userPending.create({
 			data: {
 				email: email,
 				password: hash,
+				token: token,
 			},
 		});
 
 		if (!userPending) {
 			return c.json({ success: true, message: 'User creation failed on DB', data: [] }, 400);
 		}
-
-		const token = generateToken()
 
 		await fetch('https://api.postmarkapp.com/email/withTemplate', {
 			method: 'POST',
@@ -75,13 +81,14 @@ app.post('/login', authMiddleware, async (c) => {
 				From: 'pablo@typeauth.com',
 				To: email,
 				TemplateAlias: 'signup',
-				TemplateId: '36742010',
 				TemplateModel: {
 					email: email,
 					token: token,
 				},
 			}),
 		});
+
+		return c.json({ success: true, message: 'Validation created successfully', data: [] }, 200);
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			return c.json({ success: false, message: 'Invalid JSON syntax', data: [] }, 400);
@@ -95,35 +102,93 @@ app.post('/login', authMiddleware, async (c) => {
 	}
 });
 
-//? Verify a key
-app.get('/:keyId/verify', authMiddleware, async (c) => {
+//? Verify a user signup
+app.post('/email/verify', authMiddleware, async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
 
 	try {
-		const appId = c.req.param('appId');
-		const keyId = c.req.param('keyId');
+		const { code, token, email } = await c.req.json();
 
-		const key = await prisma.key.findUnique({
-			where: { id: keyId },
-			include: { Application: true },
+		if (!code || !token) {
+			return c.json({ success: true, message: 'Missing code or token', data: [] }, 400);
+		}
+
+		if (code !== token) {
+			return c.json({ success: true, message: 'Code and token do not match', data: [] }, 400);
+		}
+
+		const user = await prisma.userPending.findUnique({
+			where: { email: email, token: token },
 		});
 
-		if (!key || key.Application.id !== appId) {
-			return c.json({ success: false, message: 'Key not found' }, 404);
+		if (!user) {
+			return c.json({ success: true, message: 'User not found', data: [] }, 400);
 		}
-
-		if (!key.enabled) {
-			return c.json({ success: false, message: 'Key is disabled' }, 403);
+		if (user.verified) {
+			return c.json({ success: true, message: 'User already verified', data: [] }, 400);
 		}
-
-		if (key.expires && key.expires < Date.now()) {
-			return c.json({ success: false, message: 'Key has expired' }, 403);
+		if (user.token !== token) {
+			return c.json({ success: true, message: 'Code and token do not match', data: [] }, 400);
 		}
+		const apiKeyUser = 'th_u_' + generateAPIKey(64);
+		const accountName = uniqueNamesGenerator(customConfig);
+		const apiKeyMaster = 'th_m_' + generateAPIKey(64);
 
-		return c.json({ success: true, message: 'Key is valid' });
+		const userCreated = await prisma.user.create({
+			data: {
+				email: email,
+				name: '',
+				apiKey: apiKeyUser,
+				avatar: '',
+				password: user.password,
+			},
+		});
+
+		const account = await prisma.account.create({
+			data: {
+				name: accountName,
+				plan: 'free',
+				period: '',
+				primary_email: email,
+				subscription_id: '',
+				apiKey: apiKeyMaster,
+				subscription_email: email,
+			},
+		});
+
+		await c.env.account_keys.put(apiKeyUser, JSON.stringify(userCreated));
+		const accountUser = await prisma.accountUser.create({
+			data: {
+				account: {
+					connect: {
+						id: account.id,
+					},
+				},
+				user: {
+					connect: {
+						id: userCreated.id,
+					},
+				},
+				email: email,
+				role: 'admin',
+				name: accountName,
+			},
+		});
+
+		await prisma.userPending.delete({
+			where: { email: email, token: token },
+		});
+		return c.json({ success: true, message: 'User verified successfully', data: [accountUser] }, 200);
 	} catch (error) {
-		console.error('Unexpected error:', error);
-		return c.json({ success: false, message: 'Internal server error' }, 500);
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error' }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error' }, 500);
+		}
 	}
 });
 

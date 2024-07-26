@@ -58,7 +58,6 @@ app.post('/account', bearerAuth({ token }), async (c) => {
 					email: primary_email,
 					name: user_name,
 					avatar: avatar,
-					clerkId,
 				},
 			});
 
@@ -117,7 +116,6 @@ app.post('/account', bearerAuth({ token }), async (c) => {
 					email: primary_email,
 					name: user_name,
 					avatar: avatar,
-					clerkId,
 					apiKey: apiKeyUser,
 				},
 			});
