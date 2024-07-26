@@ -74,12 +74,11 @@ app.post('/login', authMiddleware, async (c) => {
 			body: JSON.stringify({
 				From: 'pablo@typeauth.com',
 				To: email,
-				TemplateAlias: 'password-reset-2',
+				TemplateAlias: 'signup',
 				TemplateId: '36742010',
 				TemplateModel: {
 					email: email,
 					token: token,
-				
 				},
 			}),
 		});
