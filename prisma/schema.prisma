@@ -38,7 +38,7 @@ model UserPending {
   email    String  @unique
   verified Boolean @default(false)
   password String?
-
+  token String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

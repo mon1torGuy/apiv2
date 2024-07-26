@@ -19,6 +19,19 @@ export function isValidRateLimit(ratelimit: RateLimit): boolean {
 	);
 }
 
+export function generateToken(length: number = 20): string {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const charactersLength = characters.length;
+    let token = '';
+    
+    for (let i = 0; i < length; i++) {
+        const randomIndex = Math.floor(Math.random() * charactersLength);
+        token += characters[randomIndex];
+    }
+    
+    return token;
+}
+
 export function generateAPIKey(byteLength: number): string {
 	const bytes = new Uint8Array(byteLength);
 	crypto.getRandomValues(bytes);

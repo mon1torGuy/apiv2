@@ -1,7 +1,7 @@
 import { sentry } from '@hono/sentry';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { authMiddleware, generateAPIKey, hashPassword, RequestKeySchema } from './utils';
+import { authMiddleware, generateAPIKey, generateToken, hashPassword, RequestKeySchema } from './utils';
 import { createPrismaClient } from './prisma';
 //@ts-expect-error
 import { PrismaClientKnownRequestError } from '@prisma/client';
@@ -19,7 +19,7 @@ app.use('*', sentry());
 app.use('*', cors());
 
 //? Create a key
-app.post('/login', async (c) => {
+app.post('/login', authMiddleware, async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
 
 	try {
@@ -50,14 +50,19 @@ app.post('/login', async (c) => {
 		}
 
 		const hash = await hashPassword(password);
-		console.log(hash);
 
 		const userPending = await prisma.userPending.create({
 			data: {
 				email: email,
-				password: password,
+				password: hash,
 			},
 		});
+
+		if (!userPending) {
+			return c.json({ success: true, message: 'User creation failed on DB', data: [] }, 400);
+		}
+
+		const token = generateToken()
 
 		await fetch('https://api.postmarkapp.com/email/withTemplate', {
 			method: 'POST',
@@ -68,14 +73,13 @@ app.post('/login', async (c) => {
 			},
 			body: JSON.stringify({
 				From: 'pablo@typeauth.com',
-				To: primary_email,
-				TemplateAlias: 'welcome',
-				TemplateId: '35756681',
+				To: email,
+				TemplateAlias: 'password-reset-2',
+				TemplateId: '36742010',
 				TemplateModel: {
-					product_url: 'https://www.typeauth.com',
-					name: user_name,
-					help_url: 'https://docs.typeauth.com',
-					sender_name: 'Pablo',
+					email: email,
+					token: token,
+				
 				},
 			}),
 		});
