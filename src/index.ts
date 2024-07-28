@@ -22,6 +22,7 @@ import { secureHeaders } from 'hono/secure-headers';
 
 type Bindings = {
 	typeauth_keys: KVNamespace;
+	refresh_token_users: KVNamespace;
 	app_jwt_keys: KVNamespace;
 	SENTRY_DSN: string;
 	DB: D1Database;

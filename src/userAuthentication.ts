@@ -13,6 +13,7 @@ const customConfig: Config = {
 };
 type Bindings = {
 	account_keys: KVNamespace;
+	refresh_token_users: KVNamespace;
 	typeauth_keys: KVNamespace;
 	refill_timestamp: KVNamespace;
 	SENTRY_DSN: string;
@@ -124,8 +125,10 @@ app.post('/login', authMiddleware, async (c) => {
 		const accountInfo = await prisma.accountUser.findMany({
 			where: { userId: user.id, email: user.email },
 		});
+		const refresh_token = generateToken(30);
+		await c.env.refresh_token_users.put(refresh_token, JSON.stringify(accountInfo), { expirationTtl: 60 * 60 * 24 * 90 });
 
-		return c.json({ success: true, message: 'User found successfully', data: accountInfo }, 200);
+		return c.json({ success: true, message: 'User found successfully', data: { userInfor: accountInfo, refresh: refresh_token } }, 200);
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			return c.json({ success: false, message: 'Invalid JSON syntax', data: [] }, 400);
@@ -213,7 +216,7 @@ app.post('/reset-password', authMiddleware, async (c) => {
 			return c.json({ success: true, message: 'Invalid token. Please check your credentials and try again.', data: [] }, 400);
 		}
 		const hash = await hashPassword(password);
-		const userUpdate = await prisma.user.update({
+		await prisma.user.update({
 			where: { id: userForgot.userId },
 			data: { password: hash },
 		});
@@ -328,6 +331,10 @@ app.post('/email/verify', authMiddleware, async (c) => {
 		await prisma.userPending.delete({
 			where: { email: email, token: token },
 		});
+		const refresh_token = generateToken(30);
+
+		await c.env.refresh_token_users.put(refresh_token, JSON.stringify(accountUser), { expirationTtl: 60 * 60 * 24 * 90 });
+		accountUser.refresh = refresh_token;
 		return c.json({ success: true, message: 'User verified successfully', data: [accountUser] }, 200);
 	} catch (error) {
 		if (error instanceof SyntaxError) {
