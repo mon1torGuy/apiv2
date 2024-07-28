@@ -199,14 +199,14 @@ app.post('/reset-password', authMiddleware, async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
 
 	try {
-		const { token, password } = await c.req.json();
+		const { code, password } = await c.req.json();
 
-		if (!token || !password) {
+		if (!code || !password) {
 			return c.json({ success: true, message: 'Missing password or token', data: [] }, 400);
 		}
 
 		const userForgot = await prisma.userForgot.findUnique({
-			where: { token: token },
+			where: { token: code },
 			include: { user: true },
 		});
 		if (!userForgot) {
@@ -233,6 +233,9 @@ app.post('/reset-password', authMiddleware, async (c) => {
 					email: userForgot.email,
 				},
 			}),
+		});
+		await prisma.userForgot.delete({
+			where: { token: code },
 		});
 
 		return c.json({ success: true, message: 'Password reset successfully', data: [] }, 200);
