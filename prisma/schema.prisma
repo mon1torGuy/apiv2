@@ -34,25 +34,37 @@ model Account {
 }
 
 model UserPending {
-  id       String  @id @default(nanoid())
-  email    String  @unique
-  verified Boolean @default(false)
-  password String?
-  token String?
+  id        String   @id @default(nanoid())
+  email     String   @unique
+  verified  Boolean  @default(false)
+  password  String?
+  token     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserForgot {
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  id        String   @id @default(nanoid())
+  email     String   
+  verified  Boolean  @default(false)
+  token     String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model User {
-  id        String        @id @default(nanoid())
-  email     String        @unique
-  name      String
-  apiKey    String?
-  avatar    String?
-  password  String?
-  accounts  AccountUser[]
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id         String        @id @default(nanoid())
+  email      String        @unique
+  name       String
+  apiKey     String?
+  avatar     String?
+  password   String?
+  accounts   AccountUser[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  UserForgot UserForgot[]
 }
 
 model AccountUser {
