@@ -26,6 +26,42 @@ app.use('*', sentry());
 app.use('*', cors());
 
 //? Create a user signup
+app.post('/refresh', authMiddleware, async (c) => {
+	try {
+		const token = c.req.query('token');
+
+		if (!token) {
+			return c.json({ success: true, message: 'Missing token', data: [] }, 400);
+		}
+
+		const tokenInformation = await c.env.refresh_token_users.get(token, { type: 'json' });
+
+		if (!tokenInformation) {
+			return c.json({ success: true, message: 'Invalid token', data: [] }, 400);
+		}
+		console.log(tokenInformation);
+
+		const refresh_token = generateToken(30);
+		await c.env.refresh_token_users.put(refresh_token, JSON.stringify(tokenInformation), { expirationTtl: 60 * 60 * 24 * 90 });
+		await c.env.refresh_token_users.delete(token);
+		return c.json(
+			{ success: true, message: 'Token refreshed successfully', data: { token: tokenInformation, refresh: refresh_token } },
+			200
+		);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax', data: [] }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error', data: [] }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
+		}
+	}
+});
+
+//? Create a user signup
 app.post('/signup', authMiddleware, async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
 
@@ -334,6 +370,7 @@ app.post('/email/verify', authMiddleware, async (c) => {
 		const refresh_token = generateToken(30);
 
 		await c.env.refresh_token_users.put(refresh_token, JSON.stringify(accountUser), { expirationTtl: 60 * 60 * 24 * 90 });
+		//@ts-expect-error
 		accountUser.refresh = refresh_token;
 		return c.json({ success: true, message: 'User verified successfully', data: [accountUser] }, 200);
 	} catch (error) {
