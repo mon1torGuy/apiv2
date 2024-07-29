@@ -39,6 +39,7 @@ app.use('*', sentry());
 app.use('*', cors());
 app.use('*', secureHeaders());
 app.notFound((c) => {
+	console.log(c.req.url);
 	return c.json(forbidden, 403);
 });
 //! Applications
@@ -51,7 +52,7 @@ app.get('/', (c) => {
 });
 
 app.route('/users', userAuthentication)
-app.route('/:accId/applications/:appId/keys/', key);
+app.route('/:accId/applications/:appId/keys', key);
 app.route('/:accId/applications', applications);
 app.route('/:accId/jwts', jwt);
 app.route('/:accId/monitors', monitor);
