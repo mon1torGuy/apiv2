@@ -20,6 +20,7 @@ type Bindings = {
 	DB: D1Database;
 	RATE_LIMITER: DurableObjectNamespace;
 	REMAINING: DurableObjectNamespace;
+	webauthn: KVNamespace;
 };
 const app = new Hono<{ Bindings: Bindings }>();
 app.use('*', sentry());
@@ -386,4 +387,117 @@ app.post('/email/verify', authMiddleware, async (c) => {
 	}
 });
 
+//? Verify a user signup
+app.post('/webauth/user', authMiddleware, async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+
+	try {
+		const { email } = c.req.query();
+
+		if (!email) {
+			return c.json({ success: true, message: 'Missing email', data: [] }, 400);
+		}
+
+		const user = await prisma.user.findUnique({
+			where: { email: email },
+		});
+
+		if (!user) {
+			return c.json({ success: true, message: 'User not found', data: [] }, 400);
+		}
+
+		return c.json({ success: true, message: 'User verified successfully', data: user }, 200);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error' }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error' }, 500);
+		}
+	}
+});
+
+//? Save Webauthn Challenge
+app.post('/webauth/challenge', authMiddleware, async (c) => {
+	try {
+		const { email, challenge } = c.req.query();
+
+		if (!email || !challenge) {
+			return c.json({ success: true, message: 'Missing 	email or challenge', data: [] }, 400);
+		}
+
+		await c.env.webauthn.put(email, challenge, { expirationTtl: 60 * 60 });
+
+		return c.json({ success: true, message: 'Challenge saved successfully', data: [] }, 200);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error' }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error' }, 500);
+		}
+	}
+});
+//? Get Webauthn Challenge
+app.get('/webauth/challenge', authMiddleware, async (c) => {
+	try {
+		const { email } = c.req.query();
+
+		if (!email) {
+			return c.json({ success: true, message: 'Missing 	email', data: [] }, 400);
+		}
+
+		const challenge = await c.env.webauthn.get(email);
+
+		return c.json({ success: true, message: 'Challenge retieved successfully', data: challenge }, 200);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error' }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error' }, 500);
+		}
+	}
+});
+///webauthn/register/credential
+//? Save the Registration Information
+app.post('/webauthn/register/credential', authMiddleware, async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+
+	try {
+		const { email, credential } = await c.req.json();
+
+		if (!email || !credential) {
+			return c.json({ success: true, message: 'Missing email or credential', data: [] }, 400);
+		}
+
+		await prisma.user.update({
+			where: { email: email },
+			data: {
+				webauthn_cred: JSON.stringify(credential),
+			},
+		});
+
+		return c.json({ success: true, message: 'Credential saved successfully', data: [] }, 200);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error' }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error' }, 500);
+		}
+	}
+});
 export default app;

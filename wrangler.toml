@@ -10,7 +10,7 @@ kv_namespaces = [
     { binding = "app_jwt_keys", id = "abba62c0fb8a4f2f956f71f865f31e2f", preview_id = "abba62c0fb8a4f2f956f71f865f31e2f" },
     { binding = "refill_timestamp", id = "33cec523d07b4711b2f3be0f286ddef6", preview_id = "33cec523d07b4711b2f3be0f286ddef6" },
     { binding = "refresh_token_users", id = "51c6632deee141ed92b3a4840a2d8e90", preview_id = "51c6632deee141ed92b3a4840a2d8e90" },
-
+    { binding = "webauthn", id = "83609956d6c94407957fa3c0c9994258", preview_id = "83609956d6c94407957fa3c0c9994258" },
 ]
 
 durable_objects.bindings = [

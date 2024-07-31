@@ -32,6 +32,7 @@ type Bindings = {
 	ANALYTICS: AnalyticsEngineDataset;
 	MONITOR: AnalyticsEngineDataset;
 	AUDIT: AnalyticsEngineDataset;
+	webauthn: KVNamespace
 };
 
 const app = new Hono<{ Bindings: Bindings }>();

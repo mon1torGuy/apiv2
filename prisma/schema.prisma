@@ -47,7 +47,7 @@ model UserForgot {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   id        String   @id @default(nanoid())
-  email     String   
+  email     String
   verified  Boolean  @default(false)
   token     String   @unique
   createdAt DateTime @default(now())
@@ -55,16 +55,20 @@ model UserForgot {
 }
 
 model User {
-  id         String        @id @default(nanoid())
-  email      String        @unique
-  name       String
-  apiKey     String?
-  avatar     String?
-  password   String?
-  accounts   AccountUser[]
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  UserForgot UserForgot[]
+  id            String        @id @default(nanoid())
+  email         String        @unique
+  name          String
+  apiKey        String?
+  avatar        String?
+  password      String?
+  is2fa         Boolean       @default(false)
+  otpsecret     String?
+  ispasskey     Boolean       @default(false)
+  webauthn_cred String?
+  accounts      AccountUser[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  UserForgot    UserForgot[]
 }
 
 model AccountUser {
