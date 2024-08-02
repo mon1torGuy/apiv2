@@ -422,6 +422,40 @@ app.post('/webauth/user', authMiddleware, async (c) => {
 	}
 });
 
+app.get('/webauth/login/verification', authMiddleware, async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+
+	try {
+		const email = c.req.query('email');
+
+		if (!email) {
+			return c.json({ success: true, message: 'Email is required', data: [] }, 400);
+		}
+
+		const user = await prisma.user.findUnique({
+			where: { email: email },
+		});
+		if (!user) {
+			return c.json({ success: true, message: 'User not found', data: [] }, 400);
+		}
+
+		const accountInfo = await prisma.accountUser.findMany({
+			where: { userId: user.id, email: user.email },
+		});
+		const refresh_token = generateToken(30);
+		await c.env.refresh_token_users.put(refresh_token, JSON.stringify(accountInfo), { expirationTtl: 60 * 60 * 24 * 90 });
+
+		return c.json({ success: true, message: 'User found successfully', data: { userInfor: accountInfo, refresh: refresh_token } }, 200);
+	} catch (error) {
+		if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error', data: [] }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
+		}
+	}
+});
 //? Save Webauthn Challenge
 app.post('/webauth/challenge', authMiddleware, async (c) => {
 	try {
@@ -444,6 +478,7 @@ app.post('/webauth/challenge', authMiddleware, async (c) => {
 		}
 	}
 });
+
 //? Get Webauthn Challenge
 app.get('/webauth/challenge', authMiddleware, async (c) => {
 	try {
