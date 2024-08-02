@@ -406,11 +406,13 @@ app.post('/webauth/user', authMiddleware, async (c) => {
 			return c.json({ success: true, message: 'User not found', data: [] }, 400);
 		}
 
+		if (!user.ispasskey) {
+			return c.json({ success: true, message: 'Passkey not registered for this user', data: [] }, 400);
+		}
+
 		return c.json({ success: true, message: 'User verified successfully', data: user }, 200);
 	} catch (error) {
-		if (error instanceof SyntaxError) {
-			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
-		} else if (error instanceof PrismaClientKnownRequestError) {
+		if (error instanceof PrismaClientKnownRequestError) {
 			console.error('Prisma database error:', error);
 			return c.json({ success: false, message: 'Database error' }, 500);
 		} else {
@@ -433,9 +435,7 @@ app.post('/webauth/challenge', authMiddleware, async (c) => {
 
 		return c.json({ success: true, message: 'Challenge saved successfully', data: [] }, 200);
 	} catch (error) {
-		if (error instanceof SyntaxError) {
-			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
-		} else if (error instanceof PrismaClientKnownRequestError) {
+		if (error instanceof PrismaClientKnownRequestError) {
 			console.error('Prisma database error:', error);
 			return c.json({ success: false, message: 'Database error' }, 500);
 		} else {
@@ -457,9 +457,7 @@ app.get('/webauth/challenge', authMiddleware, async (c) => {
 
 		return c.json({ success: true, message: 'Challenge retieved successfully', data: challenge }, 200);
 	} catch (error) {
-		if (error instanceof SyntaxError) {
-			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
-		} else if (error instanceof PrismaClientKnownRequestError) {
+		if (error instanceof PrismaClientKnownRequestError) {
 			console.error('Prisma database error:', error);
 			return c.json({ success: false, message: 'Database error' }, 500);
 		} else {
@@ -484,6 +482,7 @@ app.post('/webauthn/register/credential', authMiddleware, async (c) => {
 			where: { email: email },
 			data: {
 				webauthn_cred: JSON.stringify(credential),
+				ispasskey: true,
 			},
 		});
 
@@ -492,6 +491,35 @@ app.post('/webauthn/register/credential', authMiddleware, async (c) => {
 		if (error instanceof SyntaxError) {
 			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
 		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error' }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error' }, 500);
+		}
+	}
+});
+//? Get the Registration Information
+app.get('/webauthn/register/credential', authMiddleware, async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+
+	try {
+		const { email } = await c.req.query();
+
+		if (!email) {
+			return c.json({ success: true, message: 'Missing email ', data: [] }, 400);
+		}
+
+		const user = await prisma.user.findUnique({
+			where: { email: email, ispasskey: true },
+		});
+
+		if (!user) {
+			return c.json({ success: true, message: 'Credential not found', data: [] }, 400);
+		}
+		return c.json({ success: true, message: 'Credential found successfully', data: user.webauthn_cred }, 200);
+	} catch (error) {
+		if (error instanceof PrismaClientKnownRequestError) {
 			console.error('Prisma database error:', error);
 			return c.json({ success: false, message: 'Database error' }, 500);
 		} else {
