@@ -93,7 +93,7 @@ model Application {
   id          String   @id @default(nanoid())
   name        String
   description String
-  expires     Int      @default(0)
+  expires     Int?    
   ratelimit   String?
   refill      String?
   prefix      String?
@@ -114,7 +114,7 @@ model Key {
   byteLength  Int         @default(135)
   enabled     Boolean     @default(true)
   environment String      @default("default")
-  expires     Int         @default(0)
+  expires     Int?      
   metadata    String?
   ratelimit   String?
   refill      String?

@@ -20,16 +20,16 @@ export function isValidRateLimit(ratelimit: RateLimit): boolean {
 }
 
 export function generateToken(length: number = 20): string {
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    const charactersLength = characters.length;
-    let token = '';
-    
-    for (let i = 0; i < length; i++) {
-        const randomIndex = Math.floor(Math.random() * charactersLength);
-        token += characters[randomIndex];
-    }
-    
-    return token;
+	const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+	const charactersLength = characters.length;
+	let token = '';
+
+	for (let i = 0; i < length; i++) {
+		const randomIndex = Math.floor(Math.random() * charactersLength);
+		token += characters[randomIndex];
+	}
+
+	return token;
 }
 
 export function generateAPIKey(byteLength: number): string {
@@ -91,7 +91,7 @@ const RefillSchema = z.object({
 	interval: z.string(),
 });
 
-export const RequestKeySchema = z.object({
+export const RequestKeyCustomSchema = z.object({
 	environment: z.string().optional(),
 	remaining: z.number().nonnegative().optional(),
 	byteLength: z.number().int().min(16).max(128).optional(),
@@ -99,6 +99,10 @@ export const RequestKeySchema = z.object({
 	metadata: z.record(z.any()).nullable().optional(),
 	ratelimit: RatelimitSchema.optional(),
 	refill: RefillSchema.optional(),
+});
+
+export const RequestKeySchema = z.object({
+	amount: z.number().nonnegative(),
 });
 
 export const RequestApplicationSchema = z.object({

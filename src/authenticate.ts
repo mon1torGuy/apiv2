@@ -83,6 +83,9 @@ app.post('/', async (c) => {
 
 		// Check if the key exists in KV
 		const { metadata, value } = await c.env.typeauth_keys.getWithMetadata<KVMetadata>(token);
+		console.log("values", JSON.parse(value!));
+		console.log("metadata", metadata);
+
 
 		if (!value) {
 			await logKeyUsageEvent(
@@ -123,6 +126,7 @@ app.post('/', async (c) => {
 
 			let rlObject = { limit: metadata.rl?.limit, timeWindow: metadata.rl?.timeWindow, remaining: 0 };
 			if (metadata.rl != null) {
+				console.log("hitting rate limiter");
 				const id = c.env.RATE_LIMITER.idFromName(token);
 				const rateLimiter = c.env.RATE_LIMITER.get(id);
 				const response = await rateLimiter.fetch(new Request(`https://ratelimiter?key=${token}`));
@@ -159,6 +163,8 @@ app.post('/', async (c) => {
 			}
 			let remaObject = { remaining: 0 };
 			if (metadata.re != null) {
+				console.log("hitting remainer");
+
 				const id = c.env.REMAINING.idFromName(token);
 				const bucket = c.env.REMAINING.get(id);
 				const response = await bucket.fetch(new Request(`https://remainer?key=${token}`));

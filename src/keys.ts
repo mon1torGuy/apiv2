@@ -1,10 +1,11 @@
 import { sentry } from '@hono/sentry';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { authMiddleware, generateAPIKey, RequestKeySchema } from './utils';
+import { authMiddleware, generateAPIKey, RequestKeyCustomSchema, RequestKeySchema } from './utils';
 import { createPrismaClient } from './prisma';
 //@ts-expect-error
 import { PrismaClientKnownRequestError } from '@prisma/client';
+import { a } from 'vitest/dist/suite-ynYMzeLu.js';
 
 type Bindings = {
 	typeauth_keys: KVNamespace;
@@ -37,7 +38,6 @@ app.post('/', authMiddleware, async (c) => {
 			return c.json({ succes: true, message: 'Application or Account not found', data: [] }, 404);
 		}
 		const requestJSONBody = await c.req.json();
-		console.log(requestJSONBody);
 		const result = RequestKeySchema.safeParse(requestJSONBody);
 		if (!result.success) {
 			return c.json(
@@ -51,7 +51,113 @@ app.post('/', authMiddleware, async (c) => {
 			);
 		}
 
-		const value = generateAPIKey(result.data.byteLength ?? application.byteLength);
+		//repeat an action the number of times specified in the amount field
+		const amount = result.data.amount;
+		const keys = [];
+		for (let i = 0; i < amount; i++) {
+			const value = application.prefix + generateAPIKey(application.byteLength);
+			const key = await prisma.key.create({
+				data: {
+					Application: { connect: { id: appId } },
+					account: { connect: { id: accId } },
+					byteLength: application.byteLength,
+					value,
+					environment: 'default',
+					expires: application.expires ?? null,
+					metadata: null,
+					remaining: application.remaining ?? null,
+					ratelimit: application.ratelimit ?? null,
+					refill: application.refill ?? null,
+				},
+			});
+			await c.env.typeauth_keys.put(key.value, JSON.stringify(key), {
+				metadata: {
+					rl: JSON.parse(application.ratelimit!),
+					re: application.remaining,
+					rf: JSON.parse(application.refill!),
+					exp: application.expires,
+					act: true,
+					name: application.name ?? '',
+				},
+			});
+			if (application.remaining !== null) {
+				const id = c.env.REMAINING.idFromName(key.value);
+				const bucket = c.env.REMAINING.get(id);
+				await bucket.fetch(new Request(`https://remainer?key=${key.value}&set=${key.remaining}&init=true`));
+			}
+			if (application.ratelimit != null) {
+				const id = c.env.RATE_LIMITER.idFromName(key.value);
+				const ratelimiter = c.env.RATE_LIMITER.get(id);
+				await ratelimiter.fetch(new Request(`https://ratelimiter?key=${key.value}&set=${key.ratelimit}&init=true`));
+			}
+
+			if (application.refill != null) {
+				const rfObject: { interval: string; amount: number } = JSON.parse(key.refill!);
+				let timeAdded = 0;
+				if (rfObject.interval === 'daily') {
+					timeAdded = Math.floor(dayinseconds + Date.now() / 1000);
+				} else if (rfObject.interval === 'weekly') {
+					timeAdded = Math.floor(weekinseconds + Date.now() / 1000);
+				} else if (rfObject.interval === 'monthly') {
+					timeAdded = Math.floor(monthinseconds + Date.now() / 1000);
+				}
+				await c.env.refill_timestamp.put(key.value, timeAdded.toString(), {
+					metadata: {
+						...rfObject,
+					},
+				});
+			}
+			keys.push(key);
+		}
+
+		return c.json({ success: true, message: '', data: keys }, 201);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax', data: [] }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error', data: [] }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
+		}
+	}
+});
+
+//? Create a key
+app.post('/custom', authMiddleware, async (c) => {
+	const dayinseconds = 60 * 60 * 24;
+	const weekinseconds = dayinseconds * 7;
+	const monthinseconds = dayinseconds * 30;
+	const prisma = createPrismaClient(c.env.DB);
+
+	try {
+		const appId = c.req.param('appId');
+		const accId = c.req.param('accId');
+
+		const application = await prisma.application.findUnique({
+			where: { id: appId, accId: accId },
+		});
+
+		if (!application) {
+			return c.json({ succes: true, message: 'Application or Account not found', data: [] }, 404);
+		}
+		const requestJSONBody = await c.req.json();
+		console.log(requestJSONBody);
+		const result = RequestKeyCustomSchema.safeParse(requestJSONBody);
+		if (!result.success) {
+			return c.json(
+				{
+					success: false,
+					message: 'Invalid request body',
+					errors: result.error.errors,
+					data: [],
+				},
+				400
+			);
+		}
+
+		const value = application.prefix + generateAPIKey(result.data.byteLength ?? application.byteLength);
 		const key = await prisma.key.create({
 			data: {
 				Application: { connect: { id: appId } },

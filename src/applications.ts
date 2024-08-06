@@ -51,7 +51,7 @@ app.post('/create', authMiddleware, async (c) => {
 				remaining: result.data.remaining ?? null,
 				keyType: result.data.keyType,
 				jwk: result.data.jwk ?? null,
-				expires: result.data.expires ?? 0,
+				expires: result.data.expires ?? null,
 				byteLength: result.data.byteLength ?? 32,
 				description: result.data.description ?? '',
 				prefix: result.data.prefix ?? '',

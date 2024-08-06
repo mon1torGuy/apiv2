@@ -7,7 +7,16 @@ import { bearerAuth } from 'hono/bearer-auth';
 import { PrismaClientKnownRequestError } from '@prisma/client';
 import { uniqueNamesGenerator, Config, adjectives, colors } from 'unique-names-generator';
 import { generateAPIKey } from './utils';
+interface ResponseData {
+	time: string;
+	application: string;
+	requests: string;
+}
 
+interface AggregatedData {
+	time: string;
+	[application: string]: number | string;
+}
 interface JWKsType {
 	kty: string;
 	use: string;
@@ -265,7 +274,7 @@ app.get('/:accId/account', bearerAuth({ token }), async (c) => {
 				accId: accID,
 			},
 		});
-		const queryKeysHourly = `SELECT toStartOfInterval(timestamp, INTERVAL '1' HOUR) AS time, COUNT() AS requests FROM analytics WHERE  blob1 = '${accID}' AND  timestamp > NOW() - INTERVAL '1' DAY GROUP BY time ORDER BY time ASC;`;
+		const queryKeysHourly = `SELECT toStartOfInterval(timestamp, INTERVAL '1' HOUR) AS time, blob5 as application, COUNT() AS requests FROM analytics WHERE  blob1 = '${accID}' AND  timestamp > NOW() - INTERVAL '1' DAY GROUP BY time, application ORDER BY time ASC;`;
 		const authentications = `SELECT COUNT() AS requests FROM analytics WHERE  blob1 = '${accID}' AND  timestamp > NOW() - INTERVAL '1' MONTH;`;
 		const topApplicationsUsage = `SELECT count() as count, blob5 as application FROM analytics WHERE blob1 = '${accID}' GROUP BY application;`;
 		const API = `https://api.cloudflare.com/client/v4/accounts/${c.env.ACCOUNT_ID}/analytics_engine/sql`;
@@ -299,6 +308,20 @@ app.get('/:accId/account', bearerAuth({ token }), async (c) => {
 		const queryResponse1JSON = await queryResponse1.json();
 		const queryResponse2JSON = await queryResponse2.json();
 
+		const aggregateRequestsByTime = (data: ResponseData[]): AggregatedData[] => {
+			const aggregationMap: { [time: string]: AggregatedData } = {};
+
+			data.forEach(({ time, application, requests }) => {
+				if (!aggregationMap[time]) {
+					aggregationMap[time] = { time };
+				}
+				aggregationMap[time][application] = (aggregationMap[time][application] || 0) + parseInt(requests, 10);
+			});
+
+			return Object.values(aggregationMap);
+		};
+		const aggregatedData = aggregateRequestsByTime(queryResponse1JSON.data);
+
 		return c.json(
 			{
 				success: true,
@@ -308,8 +331,7 @@ app.get('/:accId/account', bearerAuth({ token }), async (c) => {
 					appCount: appCount,
 					//@ts-expect-error
 					authentications: queryResponseJSON.data[0].requests,
-					//@ts-expect-error
-					analyticsHourly: queryResponse1JSON.data,
+					analyticsHourly: aggregatedData,
 					//@ts-expect-error
 					topApplicationUsage: queryResponse2JSON.data,
 				},

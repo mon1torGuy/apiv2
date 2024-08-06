@@ -88,7 +88,7 @@ app.get('/:accId/keys', authMiddleware, async (c) => {
 			//@ts-expect-error
 			key.Application = undefined;
 
-			key.remaining = jsonResponse.remaining;
+			key.remaining = jsonResponse.remaining === undefined ? null : jsonResponse.remaining;
 			key.ratelimit = key.ratelimit != null ? JSON.parse(key.ratelimit) : null;
 			key.refill = key.refill != null ? JSON.parse(key.refill) : null;
 		}
