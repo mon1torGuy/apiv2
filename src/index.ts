@@ -27,6 +27,7 @@ type Bindings = {
 	SENTRY_DSN: string;
 	DB: D1Database;
 	ACCOUNT_ID: string;
+	member_invitations: KVNamespace;
 	RATE_LIMITER: DurableObjectNamespace;
 	REMAINING: DurableObjectNamespace;
 	ANALYTICS: AnalyticsEngineDataset;

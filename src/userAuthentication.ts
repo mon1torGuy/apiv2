@@ -21,6 +21,7 @@ type Bindings = {
 	RATE_LIMITER: DurableObjectNamespace;
 	REMAINING: DurableObjectNamespace;
 	webauthn: KVNamespace;
+	member_invitations: KVNamespace;
 };
 const app = new Hono<{ Bindings: Bindings }>();
 app.use('*', sentry());
@@ -374,6 +375,103 @@ app.post('/email/verify', authMiddleware, async (c) => {
 		//@ts-expect-error
 		accountUser.refresh = refresh_token;
 		return c.json({ success: true, message: 'User verified successfully', data: [accountUser] }, 200);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: 'Database error' }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error' }, 500);
+		}
+	}
+});
+//? Verify a member invitation
+app.post('/email/member/verify', authMiddleware, async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+
+	try {
+		const { code, token, email } = await c.req.json();
+
+		if (!code || !token) {
+			return c.json({ success: true, message: 'Missing code or token', data: [] }, 400);
+		}
+
+		if (code !== token) {
+			return c.json({ success: true, message: 'Code and token do not match', data: [] }, 400);
+		}
+
+		const user = (await c.env.member_invitations.get(token, { type: 'json' })) as {
+			email: string;
+			role: string;
+			accID: string;
+			userExist: boolean;
+			userID?: string;
+			account_name?: string;
+		} | null;
+
+		if (!user) {
+			return c.json({ success: true, message: 'User not found', data: [] }, 400);
+		}
+
+		if (user.userExist) {
+			const account = await prisma.accountUser.create({
+				data: {
+					account: {
+						connect: {
+							id: user.accID,
+						},
+					},
+					user: {
+						connect: {
+							id: user.userID,
+						},
+					},
+					email: email,
+					role: user.role,
+					name: user.account_name ?? '',
+				},
+			});
+
+			const apiKeyUser = 'th_u_' + generateAPIKey(64);
+
+			await c.env.account_keys.put(apiKeyUser, JSON.stringify(account));
+			return c.json({ success: true, message: 'User verified successfully', data: [] }, 200);
+		} else {
+			const apiKeyUser = 'th_u_' + generateAPIKey(64);
+
+			const userCreated = await prisma.user.create({
+				data: {
+					email: email,
+					name: '',
+					apiKey: apiKeyUser,
+					avatar: '',
+					password: 'Pending creation',
+				},
+			});
+
+			const accountUser = await prisma.accountUser.create({
+				data: {
+					account: {
+						connect: {
+							id: user.accID,
+						},
+					},
+					user: {
+						connect: {
+							id: userCreated.id,
+						},
+					},
+					email: email,
+					role: user.role,
+					name: user.account_name ?? '',
+				},
+			});
+			await c.env.account_keys.put(apiKeyUser, JSON.stringify(accountUser));
+		}
+
+		return c.json({ success: true, message: 'Internal error', data: [] }, 200);
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);

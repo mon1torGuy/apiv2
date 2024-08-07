@@ -11,6 +11,7 @@ kv_namespaces = [
     { binding = "refill_timestamp", id = "33cec523d07b4711b2f3be0f286ddef6", preview_id = "33cec523d07b4711b2f3be0f286ddef6" },
     { binding = "refresh_token_users", id = "51c6632deee141ed92b3a4840a2d8e90", preview_id = "51c6632deee141ed92b3a4840a2d8e90" },
     { binding = "webauthn", id = "83609956d6c94407957fa3c0c9994258", preview_id = "83609956d6c94407957fa3c0c9994258" },
+    { binding = "member_invitations", id = "08f3fbbb3baa4289978eda544427632d", preview_id = "08f3fbbb3baa4289978eda544427632d" },
 ]
 
 durable_objects.bindings = [

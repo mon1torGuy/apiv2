@@ -5,8 +5,8 @@ import { createPrismaClient } from './prisma';
 import { bearerAuth } from 'hono/bearer-auth';
 //@ts-expect-error
 import { PrismaClientKnownRequestError } from '@prisma/client';
-import { uniqueNamesGenerator, Config, adjectives, colors } from 'unique-names-generator';
-import { generateAPIKey } from './utils';
+import { generateToken } from './utils';
+import { use } from 'hono/jsx';
 interface ResponseData {
 	time: string;
 	application: string;
@@ -17,244 +17,21 @@ interface AggregatedData {
 	time: string;
 	[application: string]: number | string;
 }
-interface JWKsType {
-	kty: string;
-	use: string;
-	crv: string;
-	kid: string;
-	x: string;
-	y: string;
-	alg: string;
-}
+
 type Bindings = {
 	account_keys: KVNamespace;
 	SENTRY_DSN: string;
 	DB: D1Database;
 	ACCOUNT_ID: string;
+	member_invitations: KVNamespace;
 	API_TOKEN: string;
 	ANALYTICS: AnalyticsEngineDataset;
 };
 const app = new Hono<{ Bindings: Bindings }>();
 const token = 'kQKxubkN2RlmAULBl5Vr-f9fSNr832rNX';
-const customConfig: Config = {
-	dictionaries: [adjectives, colors],
-	separator: '-',
-	length: 2,
-};
+
 app.use('*', sentry());
 app.use('*', cors());
-
-app.post('/account', bearerAuth({ token }), async (c) => {
-	const prisma = createPrismaClient(c.env.DB);
-	const isInvite = c.req.query('invite');
-	try {
-		const {
-			plan = 'free',
-			primary_email,
-			subscription_id = '',
-			subscription_email = '',
-			accInv = '',
-			role = '',
-			clerkId,
-			period = '',
-			user_name = '',
-			avatar = '',
-		} = await c.req.json();
-
-		if (isInvite) {
-			const user = await prisma.user.create({
-				data: {
-					email: primary_email,
-					name: user_name,
-					avatar: avatar,
-				},
-			});
-
-			const accounInfo = await prisma.account.findUnique({
-				where: { id: accInv },
-				select: { name: true },
-			});
-
-			await prisma.accountUser.create({
-				data: {
-					account: {
-						connect: {
-							id: accInv,
-						},
-					},
-					user: {
-						connect: {
-							id: user.id,
-						},
-					},
-					email: primary_email,
-					role: role,
-					name: accounInfo?.name ?? '',
-				},
-			});
-		}
-
-		const isExistingUser = await prisma.user.findFirst({
-			where: {
-				email: primary_email, // Replace with the desired user email
-			},
-			include: {
-				accounts: true,
-			},
-		});
-		if (!isExistingUser) {
-			const accountName = uniqueNamesGenerator(customConfig);
-			const apiKeyMaster = 'th_m_' + generateAPIKey(64);
-
-			const account = await prisma.account.create({
-				data: {
-					name: accountName,
-					plan,
-					period,
-					primary_email,
-					subscription_id,
-					clerkId,
-					apiKey: apiKeyMaster,
-					subscription_email,
-				},
-			});
-			const apiKeyUser = 'th_u_' + generateAPIKey(64);
-
-			const user = await prisma.user.create({
-				data: {
-					email: primary_email,
-					name: user_name,
-					avatar: avatar,
-					apiKey: apiKeyUser,
-				},
-			});
-			await c.env.account_keys.put(apiKeyUser, JSON.stringify(user));
-			await prisma.accountUser.create({
-				data: {
-					account: {
-						connect: {
-							id: account.id,
-						},
-					},
-					user: {
-						connect: {
-							id: user.id,
-						},
-					},
-					email: primary_email,
-					role: 'admin',
-					name: accountName,
-				},
-			});
-
-			const dataUser = await prisma.user.findFirst({
-				where: {
-					email: primary_email, // Replace with the desired user email
-				},
-				include: {
-					accounts: true,
-				},
-			});
-
-			await fetch('https://api.postmarkapp.com/email/withTemplate', {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-					'X-Postmark-Server-Token': '684fa8ef-2acb-452d-a2ca-6af9e071381e',
-				},
-				body: JSON.stringify({
-					From: 'pablo@typeauth.com',
-					To: primary_email,
-					TemplateAlias: 'welcome',
-					TemplateId: '35756681',
-					TemplateModel: {
-						product_url: 'https://www.typeauth.com',
-						name: user_name,
-						help_url: 'https://docs.typeauth.com',
-						sender_name: 'Pablo',
-					},
-				}),
-			});
-
-			return c.json({ success: true, message: '', data: dataUser }, 201);
-		}
-
-		return c.json({ success: true, message: '', data: isExistingUser }, 200);
-	} catch (error) {
-		if (error instanceof SyntaxError) {
-			// JSON parsing error
-			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
-		} else if (error instanceof PrismaClientKnownRequestError) {
-			// Prisma database error
-			console.error('Prisma database error:', error);
-			return c.json({ success: true, message: 'Database error', data: [] }, 500);
-		} else {
-			// Other errors
-			console.error('Unexpected error:', error);
-			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
-		}
-	}
-});
-
-app.post('/feedback', bearerAuth({ token }), async (c) => {
-	const prisma = createPrismaClient(c.env.DB);
-	try {
-		const { name, description = '' } = await c.req.json();
-
-		const addFeedback = await prisma.feedback.create({
-			data: {
-				name,
-				description,
-				upvote: 1,
-				status: 'backlog',
-			},
-		});
-
-		return c.json({ success: true, message: '', data: addFeedback }, 201);
-	} catch (error) {
-		if (error instanceof SyntaxError) {
-			// JSON parsing error
-			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
-		} else if (error instanceof PrismaClientKnownRequestError) {
-			// Prisma database error
-			console.error('Prisma database error:', error);
-			return c.json({ success: true, message: 'Database error', data: [] }, 500);
-		} else {
-			// Other errors
-			console.error('Unexpected error:', error);
-			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
-		}
-	}
-});
-app.put('/feedback', bearerAuth({ token }), async (c) => {
-	const prisma = createPrismaClient(c.env.DB);
-	try {
-		const { id, upvote } = await c.req.json();
-
-		const addFeedback = await prisma.feedback.update({
-			where: { id: id },
-			data: {
-				upvote: parseInt(upvote) + 1,
-			},
-		});
-
-		return c.json({ success: true, message: '', data: addFeedback }, 200);
-	} catch (error) {
-		if (error instanceof SyntaxError) {
-			// JSON parsing error
-			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
-		} else if (error instanceof PrismaClientKnownRequestError) {
-			// Prisma database error
-			console.error('Prisma database error:', error);
-			return c.json({ success: true, message: 'Database error', data: [] }, 500);
-		} else {
-			// Other errors
-			console.error('Unexpected error:', error);
-			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
-		}
-	}
-});
 
 //! Account
 //? Dashboard statistics
@@ -315,11 +92,13 @@ app.get('/:accId/account', bearerAuth({ token }), async (c) => {
 				if (!aggregationMap[time]) {
 					aggregationMap[time] = { time };
 				}
+				//@ts-expect-error
 				aggregationMap[time][application] = (aggregationMap[time][application] || 0) + parseInt(requests, 10);
 			});
 
 			return Object.values(aggregationMap);
 		};
+		//@ts-expect-error
 		const aggregatedData = aggregateRequestsByTime(queryResponse1JSON.data);
 
 		return c.json(
@@ -367,6 +146,93 @@ app.post('/:accId/account/name', bearerAuth({ token }), async (c) => {
 		});
 
 		return c.json({ success: true, message: '', data: updateAccName }, 200);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			// JSON parsing error
+			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			// Prisma database error
+			console.error('Prisma database error:', error);
+			return c.json({ success: true, message: 'Database error', data: [] }, 500);
+		} else {
+			// Other errors
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
+		}
+	}
+});
+app.post('/:accId/account/addmember', bearerAuth({ token }), async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+	const accID = c.req.param('accId');
+	const { email, role, from_email } = await c.req.json();
+	try {
+		const checkifUserexist = await prisma.user.findUnique({
+			where: { email: email },
+		});
+		if (checkifUserexist) {
+			const checkAccount = await prisma.accountUser.findMany({
+				where: { email: email },
+			});
+			if (checkAccount.find((account) => account.accId === accID)) {
+				return c.json({ success: true, message: 'User already exist in this account', data: [] }, 400);
+			} else {
+				const accountName = await prisma.account.findUnique({
+					where: { id: accID },
+					select: { name: true },
+				});
+				const token = generateToken(20);
+				await c.env.member_invitations.put(
+					token,
+					JSON.stringify({ email, role, accID, userExist: true, userID: checkifUserexist.id, account_name: accountName?.name }),
+					{
+						expirationTtl: 60 * 60 * 24 * 7,
+					}
+				);
+				await fetch('https://api.postmarkapp.com/email/withTemplate', {
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+						'X-Postmark-Server-Token': '684fa8ef-2acb-452d-a2ca-6af9e071381e',
+					},
+					body: JSON.stringify({
+						From: 'pablo@typeauth.com',
+						To: email,
+						TemplateAlias: 'user-invitation',
+						TemplateModel: {
+							email: email,
+							token: token,
+							from_email: from_email,
+						},
+					}),
+				});
+			}
+		} else {
+			const token = generateToken(20);
+			await c.env.member_invitations.put(token, JSON.stringify({ email, role, accID, userExist: false }), {
+				expirationTtl: 60 * 60 * 24 * 7,
+			});
+			await fetch('https://api.postmarkapp.com/email/withTemplate', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+					'X-Postmark-Server-Token': '684fa8ef-2acb-452d-a2ca-6af9e071381e',
+				},
+				body: JSON.stringify({
+					From: 'pablo@typeauth.com',
+					To: email,
+					TemplateAlias: 'user-invitation',
+					TemplateModel: {
+						email: email,
+						token: token,
+						from_email: from_email,
+					},
+				}),
+			});
+
+			return c.json({ success: true, message: 'Invitation sent successfully', data: [] }, 200);
+		}
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			// JSON parsing error
@@ -477,36 +343,7 @@ app.get('/:accId/account/info', bearerAuth({ token }), async (c) => {
 		}
 	}
 });
-//? Is  needed?????
-app.post('/account/info', bearerAuth({ token }), async (c) => {
-	const prisma = createPrismaClient(c.env.DB);
-	try {
-		const { email } = await c.req.json();
-		const user = await prisma.user.findUnique({
-			where: { email: email },
-		});
-		if (!user) {
-			return c.json({ success: true, message: 'User not found', data: [] });
-		}
-		const account = await prisma.accountUser.findMany({
-			where: { userId: user?.id },
-		});
-		return c.json({ success: true, message: '', data: account }, 201);
-	} catch (error) {
-		if (error instanceof SyntaxError) {
-			// JSON parsing error
-			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
-		} else if (error instanceof PrismaClientKnownRequestError) {
-			// Prisma database error
-			console.error('Prisma database error:', error);
-			return c.json({ success: true, message: 'Database error', data: [] }, 500);
-		} else {
-			// Other errors
-			console.error('Unexpected error:', error);
-			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
-		}
-	}
-});
+
 //? Account Settings
 app.get('/:accId/settings', bearerAuth({ token }), async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
@@ -562,4 +399,247 @@ app.get('/feedback', bearerAuth({ token }), async (c) => {
 	}
 });
 
+app.post('/feedback', bearerAuth({ token }), async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+	try {
+		const { name, description = '' } = await c.req.json();
+
+		const addFeedback = await prisma.feedback.create({
+			data: {
+				name,
+				description,
+				upvote: 1,
+				status: 'backlog',
+			},
+		});
+
+		return c.json({ success: true, message: '', data: addFeedback }, 201);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			// JSON parsing error
+			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			// Prisma database error
+			console.error('Prisma database error:', error);
+			return c.json({ success: true, message: 'Database error', data: [] }, 500);
+		} else {
+			// Other errors
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
+		}
+	}
+});
+app.put('/feedback', bearerAuth({ token }), async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+	try {
+		const { id, upvote } = await c.req.json();
+
+		const addFeedback = await prisma.feedback.update({
+			where: { id: id },
+			data: {
+				upvote: parseInt(upvote) + 1,
+			},
+		});
+
+		return c.json({ success: true, message: '', data: addFeedback }, 200);
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			// JSON parsing error
+			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			// Prisma database error
+			console.error('Prisma database error:', error);
+			return c.json({ success: true, message: 'Database error', data: [] }, 500);
+		} else {
+			// Other errors
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
+		}
+	}
+});
+////
+
+// app.post('/account', bearerAuth({ token }), async (c) => {
+// 	const prisma = createPrismaClient(c.env.DB);
+// 	const isInvite = c.req.query('invite');
+// 	try {
+// 		const {
+// 			plan = 'free',
+// 			primary_email,
+// 			subscription_id = '',
+// 			subscription_email = '',
+// 			accInv = '',
+// 			role = '',
+// 			clerkId,
+// 			period = '',
+// 			user_name = '',
+// 			avatar = '',
+// 		} = await c.req.json();
+
+// 		if (isInvite) {
+// 			const user = await prisma.user.create({
+// 				data: {
+// 					email: primary_email,
+// 					name: user_name,
+// 					avatar: avatar,
+// 				},
+// 			});
+
+// 			const accounInfo = await prisma.account.findUnique({
+// 				where: { id: accInv },
+// 				select: { name: true },
+// 			});
+
+// 			await prisma.accountUser.create({
+// 				data: {
+// 					account: {
+// 						connect: {
+// 							id: accInv,
+// 						},
+// 					},
+// 					user: {
+// 						connect: {
+// 							id: user.id,
+// 						},
+// 					},
+// 					email: primary_email,
+// 					role: role,
+// 					name: accounInfo?.name ?? '',
+// 				},
+// 			});
+// 		}
+
+// 		const isExistingUser = await prisma.user.findFirst({
+// 			where: {
+// 				email: primary_email, // Replace with the desired user email
+// 			},
+// 			include: {
+// 				accounts: true,
+// 			},
+// 		});
+// 		if (!isExistingUser) {
+// 			const accountName = uniqueNamesGenerator(customConfig);
+// 			const apiKeyMaster = 'th_m_' + generateAPIKey(64);
+
+// 			const account = await prisma.account.create({
+// 				data: {
+// 					name: accountName,
+// 					plan,
+// 					period,
+// 					primary_email,
+// 					subscription_id,
+// 					clerkId,
+// 					apiKey: apiKeyMaster,
+// 					subscription_email,
+// 				},
+// 			});
+// 			const apiKeyUser = 'th_u_' + generateAPIKey(64);
+
+// 			const user = await prisma.user.create({
+// 				data: {
+// 					email: primary_email,
+// 					name: user_name,
+// 					avatar: avatar,
+// 					apiKey: apiKeyUser,
+// 				},
+// 			});
+// 			await c.env.account_keys.put(apiKeyUser, JSON.stringify(user));
+// 			await prisma.accountUser.create({
+// 				data: {
+// 					account: {
+// 						connect: {
+// 							id: account.id,
+// 						},
+// 					},
+// 					user: {
+// 						connect: {
+// 							id: user.id,
+// 						},
+// 					},
+// 					email: primary_email,
+// 					role: 'admin',
+// 					name: accountName,
+// 				},
+// 			});
+
+// 			const dataUser = await prisma.user.findFirst({
+// 				where: {
+// 					email: primary_email, // Replace with the desired user email
+// 				},
+// 				include: {
+// 					accounts: true,
+// 				},
+// 			});
+
+// 			await fetch('https://api.postmarkapp.com/email/withTemplate', {
+// 				method: 'POST',
+// 				headers: {
+// 					Accept: 'application/json',
+// 					'Content-Type': 'application/json',
+// 					'X-Postmark-Server-Token': '684fa8ef-2acb-452d-a2ca-6af9e071381e',
+// 				},
+// 				body: JSON.stringify({
+// 					From: 'pablo@typeauth.com',
+// 					To: primary_email,
+// 					TemplateAlias: 'welcome',
+// 					TemplateId: '35756681',
+// 					TemplateModel: {
+// 						product_url: 'https://www.typeauth.com',
+// 						name: user_name,
+// 						help_url: 'https://docs.typeauth.com',
+// 						sender_name: 'Pablo',
+// 					},
+// 				}),
+// 			});
+
+// 			return c.json({ success: true, message: '', data: dataUser }, 201);
+// 		}
+
+// 		return c.json({ success: true, message: '', data: isExistingUser }, 200);
+// 	} catch (error) {
+// 		if (error instanceof SyntaxError) {
+// 			// JSON parsing error
+// 			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
+// 		} else if (error instanceof PrismaClientKnownRequestError) {
+// 			// Prisma database error
+// 			console.error('Prisma database error:', error);
+// 			return c.json({ success: true, message: 'Database error', data: [] }, 500);
+// 		} else {
+// 			// Other errors
+// 			console.error('Unexpected error:', error);
+// 			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
+// 		}
+// 	}
+// });
+
+//? Is  needed?????
+// app.post('/account/info', bearerAuth({ token }), async (c) => {
+// 	const prisma = createPrismaClient(c.env.DB);
+// 	try {
+// 		const { email } = await c.req.json();
+// 		const user = await prisma.user.findUnique({
+// 			where: { email: email },
+// 		});
+// 		if (!user) {
+// 			return c.json({ success: true, message: 'User not found', data: [] });
+// 		}
+// 		const account = await prisma.accountUser.findMany({
+// 			where: { userId: user?.id },
+// 		});
+// 		return c.json({ success: true, message: '', data: account }, 201);
+// 	} catch (error) {
+// 		if (error instanceof SyntaxError) {
+// 			// JSON parsing error
+// 			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
+// 		} else if (error instanceof PrismaClientKnownRequestError) {
+// 			// Prisma database error
+// 			console.error('Prisma database error:', error);
+// 			return c.json({ success: true, message: 'Database error', data: [] }, 500);
+// 		} else {
+// 			// Other errors
+// 			console.error('Unexpected error:', error);
+// 			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
+// 		}
+// 	}
+// });
 export default app;
