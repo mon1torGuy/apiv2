@@ -408,7 +408,7 @@ app.post('/email/member/verify', authMiddleware, async (c) => {
 			accID: string;
 			userExist: boolean;
 			userID?: string;
-			account_name?: string;
+			account_name: string;
 		} | null;
 
 		if (!user) {
@@ -430,7 +430,7 @@ app.post('/email/member/verify', authMiddleware, async (c) => {
 					},
 					email: email,
 					role: user.role,
-					name: user.account_name ?? '',
+					name: user.account_name,
 				},
 			});
 
@@ -499,7 +499,7 @@ app.post('/email/member/verify/pass', authMiddleware, async (c) => {
 		});
 
 		if (user?.password !== 'Pending creation') {
-			return c.json({ success: true, message: 'User already exists', data: [] }, 400);
+			return c.json({ success: true, message: 'User already setup new password', data: [] }, 400);
 		}
 		if (!user) {
 			return c.json({ success: true, message: 'User not found', data: [] }, 400);

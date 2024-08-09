@@ -165,9 +165,16 @@ app.post('/:accId/account/addmember', bearerAuth({ token }), async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
 	const accID = c.req.param('accId');
 	const { email, role, from_email } = await c.req.json();
+	if (!accID || !email || !role || !from_email) {
+		return c.json({ success: true, message: 'Missing parameters', data: [] }, 400);
+	}
 	try {
 		const checkifUserexist = await prisma.user.findUnique({
 			where: { email: email },
+		});
+		const accountName = await prisma.account.findUnique({
+			where: { id: accID },
+			select: { name: true },
 		});
 		if (checkifUserexist) {
 			const checkAccount = await prisma.accountUser.findMany({
@@ -176,14 +183,10 @@ app.post('/:accId/account/addmember', bearerAuth({ token }), async (c) => {
 			if (checkAccount.find((account) => account.accId === accID)) {
 				return c.json({ success: true, message: 'User already exist in this account', data: [] }, 400);
 			} else {
-				const accountName = await prisma.account.findUnique({
-					where: { id: accID },
-					select: { name: true },
-				});
 				const token = generateToken(20);
 				await c.env.member_invitations.put(
 					token,
-					JSON.stringify({ email, role, accID, userExist: true, userID: checkifUserexist.id, account_name: accountName?.name }),
+					JSON.stringify({ email, role, accID, userExist: true, userID: checkifUserexist.id, account_name: accountName!.name }),
 					{
 						expirationTtl: 60 * 60 * 24 * 7,
 					}
@@ -206,10 +209,11 @@ app.post('/:accId/account/addmember', bearerAuth({ token }), async (c) => {
 						},
 					}),
 				});
+				return c.json({ success: true, message: 'Invitation sent successfully', data: [] }, 200);
 			}
 		} else {
 			const token = generateToken(20);
-			await c.env.member_invitations.put(token, JSON.stringify({ email, role, accID, userExist: false }), {
+			await c.env.member_invitations.put(token, JSON.stringify({ email, role, accID, userExist: false, account_name: accountName!.name }), {
 				expirationTtl: 60 * 60 * 24 * 7,
 			});
 			await fetch('https://api.postmarkapp.com/email/withTemplate', {
@@ -253,27 +257,40 @@ app.delete('/:accId/account/member', bearerAuth({ token }), async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
 	const accID = c.req.param('accId');
 	const email = c.req.query('email');
-	try {
-		await prisma.accountUser.delete({
-			where: { id: accID, email: email },
-		});
+	const userID = c.req.query('userID');
 
-		const isSingleAccount = await prisma.accountUser.findMany({
+	if (!accID || !email || !userID) {
+		return c.json({ success: true, message: 'Missing parameters', data: [] }, 400);
+	}
+	try {
+		await prisma.accountUser.deleteMany({
+			where: { accId: accID, email: email, userId: userID },
+		});
+		//Check if the user is in other accounts
+		const existonOtherAccount = await prisma.accountUser.findMany({
 			where: {
-				email: email, // Replace with the desired user email
+				email: email,
+				userId: userID, // Replace with the desired user email
 			},
 		});
-
-		if (isSingleAccount.length > 0) {
-			return c.json({ success: true, message: 'delete', data: [] }, 400);
+		// If is not in other accounts, delete the user
+		if (!existonOtherAccount || existonOtherAccount.length === 0) {
+			await prisma.user.delete({
+				where: { id: userID },
+			});
+			return c.json({ success: true, message: 'User deleted successfully', data: [] }, 200);
 		}
 
-		return c.json({ success: true, message: 'ok', data: [] }, 400);
+		return c.json({ success: true, message: 'User deleted successfully', data: [] }, 200);
 	} catch (error) {
 		if (error instanceof PrismaClientKnownRequestError) {
+			//@ts-expect-error
+			if (error.meta.cause === 'Record to delete does not exist.') {
+				return c.json({ success: true, message: 'Member already deleted', data: [] }, 500);
+			}
 			// Prisma database error
 			console.error('Prisma database error:', error);
-			return c.json({ success: true, message: 'Database error', data: [] }, 500);
+			return c.json({ success: true, message: error, data: [] }, 500);
 		} else {
 			// Other errors
 			console.error('Unexpected error:', error);
@@ -457,189 +474,5 @@ app.put('/feedback', bearerAuth({ token }), async (c) => {
 		}
 	}
 });
-////
 
-// app.post('/account', bearerAuth({ token }), async (c) => {
-// 	const prisma = createPrismaClient(c.env.DB);
-// 	const isInvite = c.req.query('invite');
-// 	try {
-// 		const {
-// 			plan = 'free',
-// 			primary_email,
-// 			subscription_id = '',
-// 			subscription_email = '',
-// 			accInv = '',
-// 			role = '',
-// 			clerkId,
-// 			period = '',
-// 			user_name = '',
-// 			avatar = '',
-// 		} = await c.req.json();
-
-// 		if (isInvite) {
-// 			const user = await prisma.user.create({
-// 				data: {
-// 					email: primary_email,
-// 					name: user_name,
-// 					avatar: avatar,
-// 				},
-// 			});
-
-// 			const accounInfo = await prisma.account.findUnique({
-// 				where: { id: accInv },
-// 				select: { name: true },
-// 			});
-
-// 			await prisma.accountUser.create({
-// 				data: {
-// 					account: {
-// 						connect: {
-// 							id: accInv,
-// 						},
-// 					},
-// 					user: {
-// 						connect: {
-// 							id: user.id,
-// 						},
-// 					},
-// 					email: primary_email,
-// 					role: role,
-// 					name: accounInfo?.name ?? '',
-// 				},
-// 			});
-// 		}
-
-// 		const isExistingUser = await prisma.user.findFirst({
-// 			where: {
-// 				email: primary_email, // Replace with the desired user email
-// 			},
-// 			include: {
-// 				accounts: true,
-// 			},
-// 		});
-// 		if (!isExistingUser) {
-// 			const accountName = uniqueNamesGenerator(customConfig);
-// 			const apiKeyMaster = 'th_m_' + generateAPIKey(64);
-
-// 			const account = await prisma.account.create({
-// 				data: {
-// 					name: accountName,
-// 					plan,
-// 					period,
-// 					primary_email,
-// 					subscription_id,
-// 					clerkId,
-// 					apiKey: apiKeyMaster,
-// 					subscription_email,
-// 				},
-// 			});
-// 			const apiKeyUser = 'th_u_' + generateAPIKey(64);
-
-// 			const user = await prisma.user.create({
-// 				data: {
-// 					email: primary_email,
-// 					name: user_name,
-// 					avatar: avatar,
-// 					apiKey: apiKeyUser,
-// 				},
-// 			});
-// 			await c.env.account_keys.put(apiKeyUser, JSON.stringify(user));
-// 			await prisma.accountUser.create({
-// 				data: {
-// 					account: {
-// 						connect: {
-// 							id: account.id,
-// 						},
-// 					},
-// 					user: {
-// 						connect: {
-// 							id: user.id,
-// 						},
-// 					},
-// 					email: primary_email,
-// 					role: 'admin',
-// 					name: accountName,
-// 				},
-// 			});
-
-// 			const dataUser = await prisma.user.findFirst({
-// 				where: {
-// 					email: primary_email, // Replace with the desired user email
-// 				},
-// 				include: {
-// 					accounts: true,
-// 				},
-// 			});
-
-// 			await fetch('https://api.postmarkapp.com/email/withTemplate', {
-// 				method: 'POST',
-// 				headers: {
-// 					Accept: 'application/json',
-// 					'Content-Type': 'application/json',
-// 					'X-Postmark-Server-Token': '684fa8ef-2acb-452d-a2ca-6af9e071381e',
-// 				},
-// 				body: JSON.stringify({
-// 					From: 'pablo@typeauth.com',
-// 					To: primary_email,
-// 					TemplateAlias: 'welcome',
-// 					TemplateId: '35756681',
-// 					TemplateModel: {
-// 						product_url: 'https://www.typeauth.com',
-// 						name: user_name,
-// 						help_url: 'https://docs.typeauth.com',
-// 						sender_name: 'Pablo',
-// 					},
-// 				}),
-// 			});
-
-// 			return c.json({ success: true, message: '', data: dataUser }, 201);
-// 		}
-
-// 		return c.json({ success: true, message: '', data: isExistingUser }, 200);
-// 	} catch (error) {
-// 		if (error instanceof SyntaxError) {
-// 			// JSON parsing error
-// 			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
-// 		} else if (error instanceof PrismaClientKnownRequestError) {
-// 			// Prisma database error
-// 			console.error('Prisma database error:', error);
-// 			return c.json({ success: true, message: 'Database error', data: [] }, 500);
-// 		} else {
-// 			// Other errors
-// 			console.error('Unexpected error:', error);
-// 			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
-// 		}
-// 	}
-// });
-
-//? Is  needed?????
-// app.post('/account/info', bearerAuth({ token }), async (c) => {
-// 	const prisma = createPrismaClient(c.env.DB);
-// 	try {
-// 		const { email } = await c.req.json();
-// 		const user = await prisma.user.findUnique({
-// 			where: { email: email },
-// 		});
-// 		if (!user) {
-// 			return c.json({ success: true, message: 'User not found', data: [] });
-// 		}
-// 		const account = await prisma.accountUser.findMany({
-// 			where: { userId: user?.id },
-// 		});
-// 		return c.json({ success: true, message: '', data: account }, 201);
-// 	} catch (error) {
-// 		if (error instanceof SyntaxError) {
-// 			// JSON parsing error
-// 			return c.json({ success: true, message: 'Invalid JSON syntax', data: [] }, 400);
-// 		} else if (error instanceof PrismaClientKnownRequestError) {
-// 			// Prisma database error
-// 			console.error('Prisma database error:', error);
-// 			return c.json({ success: true, message: 'Database error', data: [] }, 500);
-// 		} else {
-// 			// Other errors
-// 			console.error('Unexpected error:', error);
-// 			return c.json({ success: false, message: 'Internal server error', data: [] }, 500);
-// 		}
-// 	}
-// });
 export default app;
