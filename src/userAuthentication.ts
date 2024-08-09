@@ -394,8 +394,8 @@ app.post('/email/member/verify', authMiddleware, async (c) => {
 	try {
 		const { code, token, email } = await c.req.json();
 
-		if (!code || !token) {
-			return c.json({ success: true, message: 'Missing code or token', data: [] }, 400);
+		if (!code || !token || !email) {
+			return c.json({ success: true, message: 'Missing code or token or email', data: [] }, 400);
 		}
 
 		if (code !== token) {
@@ -469,9 +469,56 @@ app.post('/email/member/verify', authMiddleware, async (c) => {
 				},
 			});
 			await c.env.account_keys.put(apiKeyUser, JSON.stringify(accountUser));
+			return c.json({ success: true, message: 'User verified and created successfully', data: [] }, 200);
+		}
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
+		} else if (error instanceof PrismaClientKnownRequestError) {
+			console.error('Prisma database error:', error);
+			return c.json({ success: false, message: error }, 500);
+		} else {
+			console.error('Unexpected error:', error);
+			return c.json({ success: false, message: 'Internal server error' }, 500);
+		}
+	}
+});
+//? Verify a member invitation
+app.post('/email/member/verify/pass', authMiddleware, async (c) => {
+	const prisma = createPrismaClient(c.env.DB);
+
+	try {
+		const { email, password, confirm_password } = await c.req.json();
+
+		if (!email || !password || !confirm_password) {
+			return c.json({ success: true, message: 'Missing email, password or confirm password', data: [] }, 400);
 		}
 
-		return c.json({ success: true, message: 'Internal error', data: [] }, 200);
+		const user = await prisma.user.findUnique({
+			where: { email: email },
+		});
+
+		if (user?.password !== 'Pending creation') {
+			return c.json({ success: true, message: 'User already exists', data: [] }, 400);
+		}
+		if (!user) {
+			return c.json({ success: true, message: 'User not found', data: [] }, 400);
+		}
+
+		if (password !== confirm_password) {
+			return c.json({ success: true, message: 'Passwords do not match', data: [] }, 400);
+		}
+		const hash = await hashPassword(password);
+		const updateUser = await prisma.user.update({
+			where: { email: email },
+			data: {
+				password: hash,
+			},
+		});
+
+		if (updateUser) {
+			return c.json({ success: true, message: 'User Password updated successfully', data: [] }, 200);
+		}
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			return c.json({ success: false, message: 'Invalid JSON syntax' }, 400);
@@ -484,7 +531,6 @@ app.post('/email/member/verify', authMiddleware, async (c) => {
 		}
 	}
 });
-
 //? Verify a user signup
 app.post('/webauth/user', authMiddleware, async (c) => {
 	const prisma = createPrismaClient(c.env.DB);
